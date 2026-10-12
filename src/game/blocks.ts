@@ -13,6 +13,8 @@ export const B = {
   BRICK: 9,
   GLASS: 10,
   BEDROCK: 11,
+  TALLGRASS: 12,
+  BOULDER: 13,
 } as const;
 
 export type Tool = "pickaxe" | "axe" | "shovel";
@@ -38,6 +40,8 @@ export const BLOCKS: Record<number, BlockDef> = {
   [B.BRICK]: { name: "Terracotta Brick", hardness: 5, tool: "pickaxe", tiles: [10, 10, 10], drop: B.BRICK },
   [B.GLASS]: { name: "Glass", hardness: 0.4, tool: null, tiles: [11, 11, 11], drop: 0, transparent: true },
   [B.BEDROCK]: { name: "Bedrock", hardness: Infinity, tool: null, tiles: [12, 12, 12], drop: 0 },
+  [B.TALLGRASS]: { name: "Tall Grass", hardness: 0.05, tool: null, tiles: [16, 16, 16], drop: 0, transparent: true },
+  [B.BOULDER]: { name: "Boulder", hardness: 3, tool: "pickaxe", tiles: [3, 3, 3], drop: B.COBBLE, transparent: true },
 };
 
 export type Item =
@@ -57,9 +61,14 @@ export const HOTBAR: Item[] = [
 ];
 
 export const isTransparent = (id: number) => id === 0 || !!BLOCKS[id]?.transparent;
+/** blocks the player walks through (air + plants) */
+export const isPassable = (id: number) => id === 0 || id === B.TALLGRASS;
+/** natural terrain that gets smoothed into organic shapes */
+export const isNatural = (id: number) => id === B.GRASS || id === B.DIRT || id === B.STONE || id === B.SAND;
+
 
 // ---------- Procedural texture atlas (4x4 tiles, 16px each) ----------
-export const ATLAS_COLS = 4;
+export const ATLAS_COLS = 5;
 
 function rng(seed: number) {
   let s = seed >>> 0;
@@ -208,6 +217,20 @@ export function drawAtlas(): HTMLCanvasElement {
     if (handle(x, y)) return [120, 85, 45, 255];
     return [0, 0, 0, 0];
   }));
+  // tall savanna grass: tapered blades with alpha cut-out
+  const blades = Array.from({ length: 14 }, (_, i) => ({ x: 0.05 + (i / 14) * 0.9 + (r() - 0.5) * 0.05, h: 0.45 + r() * 0.55, w: 0.025 + r() * 0.02, lean: (r() - 0.5) * 0.25, t: r() }));
+  put(16, (u, v, n) => {
+    const y = 1 - v; // 0 bottom .. 1 top
+    for (const b of blades) {
+      if (y > b.h) continue;
+      const k = y / b.h, cx = b.x + b.lean * k * k, w = b.w * (1 - k * 0.85);
+      if (Math.abs(u - cx) < w) {
+        const base = mix([110, 120, 40], [214, 186, 96], k * 0.7 + b.t * 0.4);
+        return [...mul(base, 0.85 + (n - 0.5) * 0.15), 255];
+      }
+    }
+    return [0, 0, 0, 0];
+  });
   ctx.putImageData(img, 0, 0);
   return c;
 }
