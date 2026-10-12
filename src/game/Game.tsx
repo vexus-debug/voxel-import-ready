@@ -523,6 +523,29 @@ function Player({ zt }: { zt: React.MutableRefObject<ZombieTarget> }) {
   );
 }
 
+// While the frame is rotated (portrait screen playing landscape), R3F measures
+// the frame's on-screen bounding box instead of its rotated layout size, so the
+// canvas keeps a portrait shape. Force the landscape buffer size and aspect.
+function LandscapeFix({ portrait, w, h }: { portrait: boolean; w: number; h: number }) {
+  const { gl, camera } = useThree();
+  useFrame(() => {
+    if (!portrait) return;
+    const el = gl.domElement;
+    if (el.clientWidth !== h || el.clientHeight !== w) {
+      gl.setSize(h, w, false);
+      el.style.width = `${h}px`;
+      el.style.height = `${w}px`;
+    }
+    const cam = camera as THREE.PerspectiveCamera;
+    const aspect = h / w;
+    if (cam.isPerspectiveCamera && Math.abs(cam.aspect - aspect) > 1e-4) {
+      cam.aspect = aspect;
+      cam.updateProjectionMatrix();
+    }
+  });
+  return null;
+}
+
 function Scene() {
   const zt = useRef<ZombieTarget>({ zombies: [] });
   const material = useMemo(() => {
