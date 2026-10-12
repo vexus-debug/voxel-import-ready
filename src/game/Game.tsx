@@ -616,6 +616,7 @@ export function Game() {
         }}
         camera={{ fov: 75, near: 0.05, far: 300, position: [g.pos.x, g.pos.y + 1.62, g.pos.z] }}>
         <Scene />
+        <LandscapeFix portrait={portrait} w={w} h={h} />
         <PointerLockControls
           selector="#__no_auto_lock"
           ref={(c: any) => {
