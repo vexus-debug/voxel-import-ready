@@ -41,23 +41,49 @@ export class World {
   versions = new Map<string, number>();
   constructor(public seed: number, public edits: Edits = {}) {}
 
+  private hcache = new Map<number, number>();
   height(x: number, z: number) {
-    // rolling savanna: domain-warped broad swells with soft micro-relief
+    const key = x * 100003 + z;
+    let v = this.hcache.get(key);
+    if (v === undefined) {
+      v = this.computeHeight(x, z);
+      if (this.hcache.size > 400000) this.hcache.clear();
+      this.hcache.set(key, v);
+    }
+    return v;
+  }
+  private computeHeight(x: number, z: number) {
+    // rolling savanna hills: domain-warped broad swells
     const wx = x + (fbm(x / 90, z / 90, this.seed + 21, 2) - 0.5) * 40;
     const wz = z + (fbm(x / 90, z / 90, this.seed + 23, 2) - 0.5) * 40;
     const n = fbm(wx / 70, wz / 70, this.seed, 4);
     const m = fbm(wx / 220, wz / 220, this.seed + 7, 2);
-    let h = 14 + n * 7 + m * 12;
-    // dry riverbeds (wadis) cut gently into the plains
+    let h = 14 + n * 6 + m * 9;
+    // mountain ranges: a continental mask gates ridged noise -> sharp crests & cliffs
+    const mask = fbm(x / 340, z / 340, this.seed + 41, 2);
+    const mt = Math.max(0, Math.min(1, (mask - 0.52) / 0.14));
+    if (mt > 0) {
+      let rid = 0, amp = 0.5, f = 1 / 60, w = 1;
+      for (let o = 0; o < 4; o++) {
+        const r = 1 - Math.abs(noise(wx * f, wz * f, this.seed + 51 + o * 7) * 2 - 1);
+        const s = r * r * w;
+        rid += s * amp; w = Math.min(1, s * 1.6); amp *= 0.5; f *= 2.1;
+      }
+      h += mt * mt * (3 - 2 * mt) * rid * 46;
+    }
+    // dry riverbeds (wadis)
     const r = Math.abs(fbm(wx / 120, wz / 120, this.seed + 31, 2) - 0.5);
-    if (r < 0.04) h -= (1 - r / 0.04) ** 2 * 3;
-    // granite kopjes: rounded dome-shaped outcrops instead of spikes
+    if (r < 0.04 && mt < 0.3) h -= (1 - r / 0.04) ** 2 * 3;
+    // granite kopjes on the plains
     const k = fbm(x / 22, z / 22, this.seed + 11, 3);
-    if (k > 0.6) { const t = Math.min(1, (k - 0.6) / 0.12); h += t * t * (3 - 2 * t) * 12; }
-    return Math.max(4, Math.min(H - 10, Math.floor(h)));
+    if (k > 0.6 && mt < 0.2) { const t = Math.min(1, (k - 0.6) / 0.12); h += t * t * (3 - 2 * t) * 10; }
+    return Math.max(4, Math.min(H - 6, Math.floor(h)));
   }
   isKopje(x: number, z: number) {
     return fbm(x / 22, z / 22, this.seed + 11, 3) > 0.64;
+  }
+  isMountain(x: number, z: number) {
+    return fbm(x / 340, z / 340, this.seed + 41, 2) > 0.56;
   }
 
   getChunk(cx: number, cz: number) {
@@ -79,14 +105,35 @@ export class World {
         const h = this.height(wx, wz);
         heights[z * CH + x] = h;
         const beach = h <= 15;
-        const rock = this.isKopje(wx, wz);
+        const slope = Math.max(
+          Math.abs(this.height(wx + 1, wz) - h), Math.abs(this.height(wx - 1, wz) - h),
+          Math.abs(this.height(wx, wz + 1) - h), Math.abs(this.height(wx, wz - 1) - h),
+        );
+        const rock = (this.isKopje(wx, wz) && !this.isMountain(wx, wz)) || slope >= 3 || h > 38 + hash2(wx, wz, this.seed + 61) * 4;
+        const soil = h > 28 ? 2 : 4;
         for (let y = 0; y <= h; y++) {
           let id: number = B.STONE;
           if (y === 0) id = B.BEDROCK;
-          else if (!rock && y >= h - 4) id = y === h ? (beach ? B.SAND : B.GRASS) : beach ? B.SAND : B.DIRT;
+          else if (!rock && y >= h - soil) id = y === h ? (beach ? B.SAND : B.GRASS) : beach ? B.SAND : B.DIRT;
           c[idx(x, y, z)] = id;
         }
       }
+    // ground cover: tall grass meadows + scattered boulders
+    for (let z = 0; z < CH; z++)
+      for (let x = 0; x < CH; x++) {
+        const wx = cx * CH + x, wz = cz * CH + z;
+        const h = heights[z * CH + x];
+        if (h + 1 >= H) continue;
+        const top = c[idx(x, h, z)];
+        const rr = hash2(wx, wz, this.seed + 71);
+        if (top === B.GRASS) {
+          const meadow = fbm(wx / 28, wz / 28, this.seed + 81, 3);
+          const dens = meadow > 0.55 ? 0.85 : meadow > 0.45 ? 0.25 : 0.03;
+          if (rr < dens) c[idx(x, h + 1, z)] = B.TALLGRASS;
+          else if (rr > 0.997) c[idx(x, h + 1, z)] = B.BOULDER;
+        } else if (top === B.STONE && rr < 0.035) c[idx(x, h + 1, z)] = B.BOULDER;
+      }
+
     const put = (x: number, y: number, z: number, id: number, force = false) => {
       if (x < 0 || z < 0 || x >= CH || z >= CH || y < 1 || y >= H) return;
       const i = idx(x, y, z);
