@@ -545,9 +545,30 @@ function Scene() {
   );
 }
 
+// Tracks viewport size; when the screen is portrait the game is rendered
+// rotated 90deg so it always plays landscape.
+function useViewport() {
+  const [dims, setDims] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  useEffect(() => {
+    const upd = () => setDims({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", upd);
+    window.addEventListener("orientationchange", upd);
+    return () => {
+      window.removeEventListener("resize", upd);
+      window.removeEventListener("orientationchange", upd);
+    };
+  }, []);
+  return dims;
+}
+
 export function Game() {
   const g = getGame();
   const ui2 = useUI();
+  const { w, h } = useViewport();
+  const portrait = h > w;
+  const frame: React.CSSProperties = portrait
+    ? { position: "fixed", top: 0, left: w, width: h, height: w, transform: "rotate(90deg)", transformOrigin: "top left" }
+    : { position: "fixed", inset: 0 };
   useEffect(() => {
     const id = setInterval(saveGame, 5000);
     window.addEventListener("beforeunload", saveGame);
@@ -557,7 +578,7 @@ export function Game() {
     };
   }, []);
   return (
-    <div className="fixed inset-0 select-none touch-none">
+    <div className="select-none touch-none" style={frame}>
       <Canvas
         dpr={touch.enabled || isTouchDevice() ? 1 : [1, 1.5]}
         shadows={{ type: THREE.PCFShadowMap }}

@@ -36,6 +36,9 @@ export function HUD() {
       uiState.locked = true;
       emit();
       document.documentElement.requestFullscreen?.().catch(() => {});
+      // Try to hold the device in landscape; the rotated frame handles it if unsupported.
+      const so = screen.orientation as (ScreenOrientation & { lock?: (o: string) => Promise<void> }) | undefined;
+      so?.lock?.("landscape")?.catch?.(() => {});
     } else getGame().controls?.lock();
   };
 
