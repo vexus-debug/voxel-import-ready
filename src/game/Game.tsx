@@ -523,6 +523,29 @@ function Player({ zt }: { zt: React.MutableRefObject<ZombieTarget> }) {
   );
 }
 
+// While the frame is rotated (portrait screen playing landscape), R3F measures
+// the frame's on-screen bounding box instead of its rotated layout size, so the
+// canvas keeps a portrait shape. Force the landscape buffer size and aspect.
+function LandscapeFix({ portrait, w, h }: { portrait: boolean; w: number; h: number }) {
+  const { gl, camera } = useThree();
+  useFrame(() => {
+    if (!portrait) return;
+    const el = gl.domElement;
+    if (el.clientWidth !== h || el.clientHeight !== w) {
+      gl.setSize(h, w, false);
+      el.style.width = `${h}px`;
+      el.style.height = `${w}px`;
+    }
+    const cam = camera as THREE.PerspectiveCamera;
+    const aspect = h / w;
+    if (cam.isPerspectiveCamera && Math.abs(cam.aspect - aspect) > 1e-4) {
+      cam.aspect = aspect;
+      cam.updateProjectionMatrix();
+    }
+  });
+  return null;
+}
+
 function Scene() {
   const zt = useRef<ZombieTarget>({ zombies: [] });
   const material = useMemo(() => {
@@ -545,9 +568,30 @@ function Scene() {
   );
 }
 
+// Tracks viewport size; when the screen is portrait the game is rendered
+// rotated 90deg so it always plays landscape.
+function useViewport() {
+  const [dims, setDims] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  useEffect(() => {
+    const upd = () => setDims({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", upd);
+    window.addEventListener("orientationchange", upd);
+    return () => {
+      window.removeEventListener("resize", upd);
+      window.removeEventListener("orientationchange", upd);
+    };
+  }, []);
+  return dims;
+}
+
 export function Game() {
   const g = getGame();
   const ui2 = useUI();
+  const { w, h } = useViewport();
+  const portrait = h > w;
+  const frame: React.CSSProperties = portrait
+    ? { position: "fixed", top: 0, left: w, width: h, height: w, transform: "rotate(90deg)", transformOrigin: "top left" }
+    : { position: "fixed", inset: 0 };
   useEffect(() => {
     const id = setInterval(saveGame, 5000);
     window.addEventListener("beforeunload", saveGame);
@@ -557,7 +601,7 @@ export function Game() {
     };
   }, []);
   return (
-    <div className="fixed inset-0 select-none touch-none">
+    <div className="select-none touch-none" style={frame}>
       <Canvas
         dpr={touch.enabled || isTouchDevice() ? 1 : [1, 1.5]}
         shadows={{ type: THREE.PCFShadowMap }}
@@ -572,6 +616,7 @@ export function Game() {
         }}
         camera={{ fov: 75, near: 0.05, far: 300, position: [g.pos.x, g.pos.y + 1.62, g.pos.z] }}>
         <Scene />
+        <LandscapeFix portrait={portrait} w={w} h={h} />
         <PointerLockControls
           selector="#__no_auto_lock"
           ref={(c: any) => {

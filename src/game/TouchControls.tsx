@@ -11,22 +11,35 @@ export function TouchControls() {
   const lookId = useRef<number | null>(null);
   const lookLast = useRef({ x: 0, y: 0 });
 
+  // When the game frame is rotated (portrait screen playing landscape), pointer
+  // coordinates arrive in page space but the game lives in the rotated local
+  // space: local x = page y, local y = page width - page x.
+  const local = (e: React.PointerEvent) => {
+    if (window.innerHeight > window.innerWidth) {
+      return { x: e.clientY, y: window.innerWidth - e.clientX };
+    }
+    return { x: e.clientX, y: e.clientY };
+  };
+
   const onDown = (e: React.PointerEvent) => {
     e.preventDefault();
-    const leftHalf = e.clientX < window.innerWidth / 2;
+    const p = local(e);
+    const wide = window.innerHeight > window.innerWidth ? window.innerHeight : window.innerWidth;
+    const leftHalf = p.x < wide / 2;
     if (leftHalf && joyId.current === null) {
       joyId.current = e.pointerId;
-      joyOrigin.current = { x: e.clientX, y: e.clientY };
-      setKnob({ x: 0, y: 0, ox: e.clientX, oy: e.clientY });
+      joyOrigin.current = p;
+      setKnob({ x: 0, y: 0, ox: p.x, oy: p.y });
     } else if (!leftHalf && lookId.current === null) {
       lookId.current = e.pointerId;
-      lookLast.current = { x: e.clientX, y: e.clientY };
+      lookLast.current = p;
     }
     (e.target as Element).setPointerCapture?.(e.pointerId);
   };
   const onMove = (e: React.PointerEvent) => {
+    const p = local(e);
     if (e.pointerId === joyId.current) {
-      let dx = e.clientX - joyOrigin.current.x, dy = e.clientY - joyOrigin.current.y;
+      let dx = p.x - joyOrigin.current.x, dy = p.y - joyOrigin.current.y;
       const len = Math.hypot(dx, dy);
       if (len > R) { dx = (dx / len) * R; dy = (dy / len) * R; }
       touch.moveX = dx / R;
@@ -34,9 +47,9 @@ export function TouchControls() {
       touch.sprint = len > R * 1.4;
       setKnob((k) => (k ? { ...k, x: dx, y: dy } : k));
     } else if (e.pointerId === lookId.current) {
-      touch.lookDX += e.clientX - lookLast.current.x;
-      touch.lookDY += e.clientY - lookLast.current.y;
-      lookLast.current = { x: e.clientX, y: e.clientY };
+      touch.lookDX += p.x - lookLast.current.x;
+      touch.lookDY += p.y - lookLast.current.y;
+      lookLast.current = p;
     }
   };
   const onUp = (e: React.PointerEvent) => {
